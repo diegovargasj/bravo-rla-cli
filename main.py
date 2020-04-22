@@ -5,7 +5,9 @@ import pandas as pd
 from audits import Plurality, SuperMajority, DHondt, MaxPollsExceededError
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run an RLA')
+    parser = argparse.ArgumentParser(
+        description='Run a Ballot-Polling Risk Limiting Audit through the terminal'
+    )
     parser.add_argument(
         '-r',
         '--risk-limit',

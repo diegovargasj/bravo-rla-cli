@@ -18,7 +18,7 @@ def plurality_sample_size(vote_count, W, L, risk_limit):
         if vote_count[l_star] < vote_count[l]:
             l_star = l
 
-    return ASN(risk_limit, vote_count[w_star], vote_count[l_star], tot) // 2
+    return ASN(risk_limit, vote_count[w_star], vote_count[l_star], tot)
 
 
 def uMax(party_votes, Sw, Sl):

@@ -11,6 +11,9 @@ class MaxPollsExceededError(Exception):
 
 
 class Audit:
+    """
+    Audit class that defines the common objects and methods for running a BRAVO audit.
+    """
     def __init__(self, risk_limit, n_winners, max_polls, random_seed, preliminary_file):
         self.required_headers = {'table', 'candidate', 'votes'}
         self.vote_count = {}
@@ -35,6 +38,10 @@ class Audit:
         assert self.n_winners > 0
         assert self.max_polls > 0
         assert set(self.preliminary.columns) >= self.required_headers
+
+    def _check_audited_ballots(self):
+        if self.m >= self.max_polls:
+            raise MaxPollsExceededError()
 
     def _preliminary(self):
         print('===========Preliminary results===========')
@@ -64,6 +71,15 @@ class Audit:
 
         return tables, m
 
+    def _init_ballot_polling(self, tables, table_count, pseudo_candidates):
+        self._preliminary()
+        for t in tables:
+            self.scrambled.extend(zip([t] * table_count[t], range(table_count[t])))
+
+        random.shuffle(self.scrambled)
+        accum_recount = {c: 0 for c in pseudo_candidates}
+        return accum_recount
+
     def ballot_polling(self):
         raise NotImplementedError()
 
@@ -75,6 +91,10 @@ class Audit:
 
 
 class Plurality(Audit):
+    """
+    A plurality election chooses the n candidates with most votes.
+    If n == 1, this becomes a simple majority election.
+    """
     def __init__(self, risk_limit, n_winners, max_polls, random_seed, preliminary_file):
         super().__init__(risk_limit, n_winners, max_polls, random_seed, preliminary_file)
         self.vote_count = self.preliminary.groupby('candidate').sum()['votes'].to_dict()
@@ -93,20 +113,13 @@ class Plurality(Audit):
 
     def sample_size(self):
         m = utils.plurality_sample_size(self.vote_count, self.W, self.L, self.risk_limit)
-        m = min(m, len(self.scrambled))
+        m = min(m // 2, len(self.scrambled))
         return m
 
     def ballot_polling(self):
-        self._preliminary()
-        for t in self.tables:
-            self.scrambled.extend(zip([t] * self.table_count[t], range(self.table_count[t])))
-
-        random.shuffle(self.scrambled)
-        accum_recount = {c: 0 for c in self.candidates}
+        accum_recount = self._init_ballot_polling(self.tables, self.table_count, self.candidates)
         while True:
-            if self.m > self.max_polls:
-                raise MaxPollsExceededError(f'polled {self.m} ballots (max {self.max_polls})')
-
+            self._check_audited_ballots()
             recount, m = self.recount()
             self.m += m
             for c in recount:
@@ -137,30 +150,27 @@ class Plurality(Audit):
 
 
 class SuperMajority(Plurality):
+    """
+    A super majority election chooses the candidate with most votes, if they
+    amount to more than half the total.
+    """
     def __init__(self, risk_limit, max_polls, random_seed, preliminary_file):
         super().__init__(risk_limit, 1, max_polls, random_seed, preliminary_file)
-        self.vote_count_s = {'w': self.vote_count[self.W[0]], 'l': sum(self.vote_count[l] for l in self.L)}
+        self.vote_count_s = {'w': self.vote_count[self.W[0]], 'l': sum(self.vote_count[loser] for loser in self.L)}
         self.Ts = {'w': {'l': Decimal(1.0)}}
         self.Ss = {'w': {'l': self.vote_count[self.W[0]] / sum(self.vote_count.values())}}
 
     def ballot_polling(self):
-        self._preliminary()
-        for t in self.tables:
-            self.scrambled.extend(zip([t] * self.table_count[t], range(self.table_count[t])))
-
-        random.shuffle(self.scrambled)
-        accum_recount = {c: 0 for c in self.candidates}
+        accum_recount = self._init_ballot_polling(self.tables, self.table_count, self.candidates)
         while True:
-            if self.m > self.max_polls:
-                raise MaxPollsExceededError(f'polled {self.m} ballots (max {self.max_polls})')
-
+            self._check_audited_ballots()
             recount, m = self.recount()
             self.m += m
             for c in recount:
                 accum_recount[c] += recount[c]
 
             self.T, self.max_p_value = utils.SPRT(self.vote_count, recount, self.T, self.risk_limit)
-            recount_s = {'w': recount[self.W[0]], 'l': sum(recount[l] for l in self.L)}
+            recount_s = {'w': recount[self.W[0]], 'l': sum(recount[loser] for loser in self.L)}
             self.Ts, max_p_value_s = utils.SPRT(self.vote_count_s, recount_s, self.Ts, self.risk_limit)
             self.max_p_value = max(self.max_p_value, max_p_value_s)
             self._stats(accum_recount)
@@ -172,6 +182,10 @@ class SuperMajority(Plurality):
 
 
 class DHondt(Audit):
+    """
+    A proportional method, in which the current party votes is divided by the
+    number of seats assigned to them + 1.
+    """
     def __init__(self, risk_limit, n_winners, max_polls, random_seed, preliminary_file):
         super().__init__(risk_limit, n_winners, max_polls, random_seed, preliminary_file)
         self.required_headers.add('party')
@@ -200,26 +214,26 @@ class DHondt(Audit):
                 self.Sl[party] = min(lp, key=lambda x: x[1])[1]
 
         self.Wp = []
-        for w in self.W:
-            if w[0] not in self.Wp:
-                self.Wp.append(w[0])
+        for winner in self.W:
+            if winner[0] not in self.Wp:
+                self.Wp.append(winner[0])
 
         self.Lp = []
-        for l in self.L:
-            if l[0] not in self.Lp:
-                self.Lp.append(l[0])
+        for loser in self.L:
+            if loser[0] not in self.Lp:
+                self.Lp.append(loser[0])
 
         self.T = {}
-        for w in self.Wp:
-            self.T[w] = {l: Decimal(1) for l in self.Lp if w != l}
+        for winner in self.Wp:
+            self.T[winner] = {loser: Decimal(1) for loser in self.Lp if winner != loser}
 
         self.Tp = {}
         for p in self.Wp:
             self.Tp[p] = {}
             seats = 0
-            for w in self.W:
-                if w[0] == p:
-                    seats = max(seats, w[1])
+            for winner in self.W:
+                if winner[0] == p:
+                    seats = max(seats, winner[1])
 
             seats += 1
             party = self.preliminary[self.preliminary['party'] == p].groupby('candidate').sum()['votes']
@@ -227,17 +241,17 @@ class DHondt(Audit):
             party_members = list(party.keys())
             party_winners = party_members[:seats]
             party_losers = party_members[seats:]
-            for w in party_winners:
-                self.Tp[p][w] = {l: Decimal(1) for l in party_losers}
+            for winner in party_winners:
+                self.Tp[p][winner] = {loser: Decimal(1) for loser in party_losers}
 
     def sample_size(self):
-        m = utils.dhondt_sample_size(self.N, self.risk_limit, self.vote_count, self.Sw, self.Sl) * 4
-        m = min(m, len(self.scrambled))
+        m = utils.dhondt_sample_size(self.N, self.risk_limit, self.vote_count, self.Sw, self.Sl)
+        m = min(m * 4, len(self.scrambled))
         return m
 
     def _preliminary(self):
         print('===========Preliminary results===========')
-        L = [l for l in self.Lp if l not in self.Wp]
+        L = [loser for loser in self.Lp if loser not in self.Wp]
         utils.print_stats(self.vote_count, self.Wp, L)
         print('=========================================')
 
@@ -245,22 +259,15 @@ class DHondt(Audit):
         print('=========================================')
         print(f'Max p-value: {self.max_p_value:.5f}')
         print(f'Polled ballots: {self.m}')
-        W = [w for w in self.party_members if self.party_members[w] in self.Wp]
-        L = [l for l in self.party_members if self.party_members[l] not in self.Wp]
+        W = [winner for winner in self.party_members if self.party_members[winner] in self.Wp]
+        L = [loser for loser in self.party_members if self.party_members[loser] not in self.Wp]
         utils.print_stats(accum_recount, W, L)
         print('=========================================')
 
     def ballot_polling(self):
-        self._preliminary()
-        for t in self.tables:
-            self.scrambled.extend(zip([t] * self.table_count[t], range(self.table_count[t])))
-
-        random.shuffle(self.scrambled)
-        accum_recount = {c: 0 for c in self.party_members}
+        accum_recount = self._init_ballot_polling(self.tables, self.table_count, self.party_members)
         while True:
-            if self.m > self.max_polls:
-                raise MaxPollsExceededError(f'polled {self.m} ballots (max {self.max_polls})')
-
+            self._check_audited_ballots()
             recount, m = self.recount()
             self.m += m
             party_recount = {p: 0 for p in self.parties}
