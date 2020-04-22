@@ -59,7 +59,6 @@ if __name__ == '__main__':
         help='path to csv file with preliminary results'
     )
     args = parser.parse_args()
-    print(args)
     risk_limit = args.risk_limit
     n_winners = args.n_winners
     max_polls = args.M
@@ -80,6 +79,7 @@ if __name__ == '__main__':
     else:  # social_choice_function == 'dhondt'
         audit = DHondt(risk_limit, n_winners, max_polls, random_seed, preliminary_file)
 
+    audit.sanity_check()
     try:
         audit.ballot_polling()
         print(f'Election verified with a p-value of {audit.max_p_value:f} <= {risk_limit}')

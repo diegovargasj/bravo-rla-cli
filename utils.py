@@ -54,7 +54,7 @@ def dhondt_sample_size(ballots, risk_limit, party_votes, Sw, Sl, gamma=0.95):
     u = uMax(party_votes, Sw, Sl)
     return math.ceil(
         math.log(1 / risk_limit) / math.log(gamma / (1 - 1 / (ballots * u)) + 1.0 - gamma)
-    ) * 2
+    )
 
 
 def print_stats(count, W, L):
