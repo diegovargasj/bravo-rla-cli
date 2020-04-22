@@ -59,6 +59,7 @@ if __name__ == '__main__':
         help='path to csv file with preliminary results'
     )
     args = parser.parse_args()
+    print(args)
     risk_limit = args.risk_limit
     n_winners = args.n_winners
     max_polls = args.M

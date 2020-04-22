@@ -3,6 +3,60 @@ import operator
 from decimal import Decimal
 
 
+def plurality_sample_size(vote_count, W, L, risk_limit):
+    tot = 0
+    for c in vote_count:
+        tot += vote_count[c]
+
+    w_star = W[0]
+    for w in W:
+        if vote_count[w] < vote_count[w_star]:
+            w_star = w
+
+    l_star = L[0]
+    for l in L:
+        if vote_count[l_star] < vote_count[l]:
+            l_star = l
+
+    return ASN(risk_limit, vote_count[w_star], vote_count[l_star], tot) // 2
+
+
+def uMax(party_votes, Sw, Sl):
+    u = 0
+    for w in Sw:
+        for l in Sl:
+            if w != l:
+                u = max(u, (Sw[w] + Sl[l]) / (Sl[l] * party_votes[w] - Sw[w] * party_votes[l]))
+
+    return u
+
+
+def dhondt_sample_size(ballots, risk_limit, party_votes, Sw, Sl, gamma=0.95):
+    """
+    Finds the minimum sample size to audit a D'Hondt election
+    @param ballots      :   {int}
+                            Number of ballots cast in the contest
+    @param party_votes  :   {dict<str->int>}
+                            Total ballots cast per party
+    @param Sw           :   {dict<str->int>}
+                            Largest divisor for any seat the party won
+    @param Sl           :   {dict<str->int>}
+                            Smallest divisor for any seat the party lost
+    @param risk_limit   :   {float}
+                            Maximum p-value acceptable for any null hypothesis
+                            to consider the election verified
+    @param gamma        :   {float}
+                            Hedge against finding a ballot that attains
+                            the upper bound. Larger values give less protection
+    @return             :   {int}
+                            Sample size to audit
+    """
+    u = uMax(party_votes, Sw, Sl)
+    return math.ceil(
+        math.log(1 / risk_limit) / math.log(gamma / (1 - 1 / (ballots * u)) + 1.0 - gamma)
+    ) * 2
+
+
 def print_stats(count, W, L):
     """
     Prints candidate stats
@@ -42,13 +96,13 @@ def get_W_L_sets(vote_count, n_winners):
 def d(s):
     """
     Returns the divisor for column s. In this case, the divisor of
-    column s is always s
+    column s is always s + 1
     @param s    :   {int}
-                    Column number
+                    Column number, starting from 0
     @return     :   {int}
                     Divisor of column s
     """
-    return s
+    return s + 1
 
 
 def t(p, vote_count):

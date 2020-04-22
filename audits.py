@@ -28,6 +28,7 @@ class Audit:
         random.seed(random_seed)
 
         self._sanity_check()
+        self.N = self.preliminary['votes'].sum()
 
     def _sanity_check(self):
         assert 0 < self.risk_limit < 1
@@ -67,7 +68,7 @@ class Audit:
     def ballot_polling(self):
         raise NotImplementedError()
 
-    def ballot_polling_recount(self):
+    def recount(self):
         raise NotImplementedError()
 
 
@@ -99,7 +100,7 @@ class Plurality(Audit):
             if self.m > self.max_polls:
                 raise MaxPollsExceededError(f'polled {self.m} ballots (max {self.max_polls})')
 
-            recount, m = self.ballot_polling_recount()
+            recount, m = self.recount()
             self.m += m
             for c in recount:
                 accum_recount[c] += recount[c]
@@ -112,7 +113,7 @@ class Plurality(Audit):
             print('Certainty not sufficient, another round is required.')
             input('Continue... ')
 
-    def ballot_polling_recount(self):
+    def recount(self):
         m = self.sample_size()
         m = min(m, len(self.scrambled))
         sample = self.scrambled[:m]
@@ -159,7 +160,7 @@ class SuperMajority(Plurality):
             if self.m > self.max_polls:
                 raise MaxPollsExceededError(f'polled {self.m} ballots (max {self.max_polls})')
 
-            recount, m = self.ballot_polling_recount()
+            recount, m = self.recount()
             self.m += m
             for c in recount:
                 accum_recount[c] += recount[c]
@@ -180,10 +181,111 @@ class DHondt(Audit):
     def __init__(self, risk_limit, n_winners, max_polls, random_seed, preliminary_file):
         super().__init__(risk_limit, n_winners, max_polls, random_seed, preliminary_file)
         self.vote_count = self.preliminary.groupby('party').sum()['votes'].to_dict()
+        self.table_count = self.preliminary.groupby('table').sum()['votes'].to_dict()
+        self.tables = list(self.table_count.keys())
         self.parties = list(self.vote_count.keys())
+        self.party_members = {}
+        for party in self.parties:
+            p = self.preliminary[self.preliminary['party'] == party]
+            for c in p['candidate'].unique():
+                self.party_members[c] = party
+
+        self.pseudo_vote_count = {(p, i): utils.p(p, self.vote_count, i) for i in range(n_winners) for p in self.parties}
+        self.W, self.L = utils.get_W_L_sets(self.pseudo_vote_count, n_winners)
+        self.Sw = {}
+        self.Sl = {}
+        for party in self.parties:
+            wp = list(filter(lambda x: x[0] == party, self.W))
+            lp = list(filter(lambda x: x[0] == party, self.L))
+            if wp:
+                self.Sw[party] = max(wp, key=lambda x: x[1])[1]
+
+            if lp:
+                self.Sl[party] = min(lp, key=lambda x: x[1])[1]
+
+        self.Wp = []
+        for w in self.W:
+            if w[0] not in self.Wp:
+                self.Wp.append(w[0])
+
+        self.Lp = []
+        for l in self.L:
+            if l[0] not in self.Lp:
+                self.Lp.append(l[0])
+
+        self.T = {}
+        for w in self.Wp:
+            self.T[w] = {l: Decimal(1) for l in self.Lp if w != l}
+
+    def _preliminary(self):
+        print('===========Preliminary results===========')
+        L = [l for l in self.Lp if l not in self.Wp]
+        utils.print_stats(self.vote_count, self.Wp, L)
+        print('=========================================')
+
+    def _stats(self, accum_recount):
+        print('=========================================')
+        print(f'Max p-value: {self.max_p_value:.5f}')
+        print(f'Polled ballots: {self.m}')
+        W = [w for w in self.party_members if self.party_members[w] in self.Wp]
+        L = [l for l in self.party_members if self.party_members[l] not in self.Wp]
+        utils.print_stats(accum_recount, W, L)
+        print('=========================================')
 
     def ballot_polling(self):
-        pass
+        self._preliminary()
+        for t in self.tables:
+            self.scrambled.extend(zip([t] * self.table_count[t], range(self.table_count[t])))
+
+        random.shuffle(self.scrambled)
+        accum_recount = {c: 0 for c in self.party_members}
+        while True:
+            if self.m > self.max_polls:
+                raise MaxPollsExceededError(f'polled {self.m} ballots (max {self.max_polls})')
+
+            recount, m = self.recount()
+            self.m += m
+            party_recount = {p: 0 for p in self.parties}
+            for c in recount:
+                t = self.party_members[c]
+                accum_recount[c] += recount[c]
+                party_recount[t] += recount[c]
+
+            self.T, self.max_p_value = utils.SPRT(self.vote_count, party_recount, self.T, self.risk_limit)
+            self._stats(accum_recount)
+            if utils.validated(self.T, self.risk_limit):
+                break
+
+            print('Certainty not sufficient, another round is required.')
+            input('Continue... ')
+
+    def recount(self):
+        m = utils.dhondt_sample_size(self.N, self.risk_limit, self.vote_count, self.Sw, self.Sl)
+        m = min(m, len(self.scrambled))
+        sample = self.scrambled[:m]
+        self.scrambled = self.scrambled[m:]
+        tables = {}
+        for t, n in sample:
+            if t not in tables:
+                tables[t] = []
+
+            tables[t].append(n)
+
+        for table in tables:
+            tables[table].sort()
+
+        while True:
+            recount = utils.enter_recount(tables, list(self.party_members.keys()))
+            recounted_ballots = 0
+            for c in recount:
+                recounted_ballots += recount[c]
+
+            if recounted_ballots == m:
+                break
+
+            print(f'Incorrect recounting: expected {m}, {recounted_ballots} given')
+
+        return recount, m
 
     def _sanity_check(self):
         super()._sanity_check()
