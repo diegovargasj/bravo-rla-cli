@@ -1,8 +1,11 @@
+import bisect
+import itertools
 import math
 import operator
 import random
 from decimal import Decimal
 
+from clcert_chachagen.chacha20_generator import ChaChaGen
 
 # Audit types
 BALLOTPOLLING = 'ballot-polling'
@@ -376,14 +379,12 @@ def ASN(risk_limit, vote_count, W, L):
     @param risk_limit   :   {float}
                             Maximum p-value acceptable for any null hypothesis
                             to consider the election verified
-    @param pw           :   {int}
-                            Number of reported ballots for the winner with
-                            the least votes
-    @param pl           :   {int}
-                            Number of reported ballots for the loser with
-                            most votes
-    @param tot          :   {int}
-                            Total number of casted ballots
+    @param vote_count   :   {dict<str->int>}
+                            Number of reported ballots per candidate
+    @param W            :   {list<str>}
+                            List of winners
+    @param L            :   {list<str>}
+                            List of losers
     @return             :   {int}
                             Estimated number of ballots needed to audit to
                             verify the election
@@ -432,7 +433,10 @@ def enter_ballot_polling_recount(tables, candidates):
 
 def enter_batch_comparison_recount(tables, candidates):
     recount = {table: {} for table in tables}
-    for table in sorted(tables):
+    tables = sorted(tables)
+    print(f'You will need to recount a total of {len(tables)} tables.')
+    print(', '.join(tables))
+    for table in tables:
         print(f'Recount all ballots from table {table}')
         for candidate in candidates:
             c = input(f'{candidate}: ')
@@ -460,8 +464,17 @@ def random_sample(population, sample_size, weights=None, seed=None):
     @return             :   {list<any>}
                             Random sample of size <sample_size>
     """
-    random.seed(seed)
-    return random.choices(population, k=sample_size, weights=weights)
+    chacha = ChaChaGen(seed=seed)
+    if weights is None:
+        weights = [1] * len(population)
+
+    cum_weights = list(itertools.accumulate(weights))
+    total = cum_weights[-1]
+    hi = len(cum_weights) - 1
+    return [
+        population[bisect.bisect(cum_weights, chacha.random() * total, 0, hi)]
+        for i in range(sample_size)
+    ]
 
 
 def batch_error_upper_bound(batch_count, margin, Wp, Lp):

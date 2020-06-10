@@ -18,7 +18,13 @@ This can be achieved with _compliance audits_.
 
 ## Dependencies
 
-Install the dependencies with `pip3 install -r requirements.txt`. 
+Install the dependencies with `pip3 install -r requirements.txt`. You will also
+need the `ChaCha20` Pseudo Random Number Generator from [this github repo](https://github.com/clcert/ChaCha20-Generator-Utilities).
+To install it, run:
+
+    git clone https://github.com/clcert/ChaCha20-Generator-Utilities
+    cd ChaCha20-Generator-Utilities/python
+    python setup.py install
 
 ## Usage
 
@@ -27,8 +33,8 @@ with the headers `table`, `candidate` and `votes`, if it's a plurality or
 super majority contest. Otherwise, if you are running a D'Hondt contest, the `.csv` 
 file needs to have `table`, `party`, `candidate` and `votes` as headers.
 
-    usage: main.py [-h] -r <alpha> [-n <n_winners>] -M <M> -s <type> -a <type> 
-                   -x <seed> -f </path/to/file>
+    usage: main.py [-h] -r <alpha> [-n <n_winners>] -M <M> -s <type> -a <type>
+                   [-x <seed>] -f </path/to/file>
     
     Run a Ballot-Polling or Batch-Comparison Risk Limiting Audit through the
     terminal
@@ -46,10 +52,9 @@ file needs to have `table`, `party`, `candidate` and `votes` as headers.
       -a <type>, --audit-type <type>
                             auditing scheme (ballot-polling, batch-comparison)
       -x <seed>, --random-seed <seed>
-                            verifiable random seed
-      -f <path/to/file>, --preliminary-count-file <path/to/file>
+                            random seed in hex, default 512 random bits
+      -f </path/to/file>, --preliminary-count-file </path/to/file>
                             path to csv file with preliminary results
-
 
 You will be asked to recount specific ballots from certain tables, and 
 enter the result. If this produces enough evidence to verify the election

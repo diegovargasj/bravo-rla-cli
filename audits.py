@@ -87,6 +87,7 @@ class Audit:
 
     def _recount_params(self):
         m = self.sample_size()
+        m = min(m, len(self.scrambled))
         draw_size = m
         if self.is_batch_comparison():
             V = self.preliminary.groupby('table').sum()['votes'].mean()
@@ -121,7 +122,7 @@ class Audit:
         weights = None
         if self.is_ballot_polling():
             for t in tables:
-                self.scrambled.extend(list(zip([t] * table_count[t], range(table_count[t]))))
+                self.scrambled.extend(list(zip(itertools.repeat(t), range(table_count[t]))))
 
         else:
             transformed_vote_count = self._vote_count_transform(self.vote_count)
@@ -141,12 +142,6 @@ class Audit:
                 weights[i] = u
                 i += 1
 
-        # self.scrambled = random_sample(
-        #     self.scrambled,
-        #     min(self.max_polls, sum(self.vote_count.values())),
-        #     method='Fisher-Yates',
-        #     prng=int.from_bytes(self.random_seed, 'big')
-        # )
         self.scrambled = utils.random_sample(
             population=self.scrambled,
             sample_size=min(self.max_polls, sum(self.vote_count.values())),
@@ -235,14 +230,13 @@ class Plurality(Audit):
                     self.S[winner][loser] = self.vote_count[winner] / (self.vote_count[winner] + self.vote_count[loser])
 
     def sample_size(self):
-        adjusted_risk_limit = self.risk_limit / self.max_p_value
+        adjusted_risk_limit = float(self.risk_limit) / self.max_p_value
         m = utils.plurality_sample_size(
             self.vote_count,
             self.W,
             self.L,
             adjusted_risk_limit
         )
-        m = min(m, len(self.scrambled))
         return m
 
     def run_audit(self):
@@ -365,7 +359,7 @@ class DHondt(Audit):
             )
 
     def sample_size(self):
-        adjusted_risk_limit = self.risk_limit / self.max_p_value
+        adjusted_risk_limit = float(self.risk_limit) / self.max_p_value
         m = utils.dhondt_sample_size(
             self.N,
             adjusted_risk_limit,
@@ -373,8 +367,10 @@ class DHondt(Audit):
             self.Sw,
             self.Sl
         )
-        m = min(m, len(self.scrambled))
-        return m
+        for p in self.Tp:
+            m = max(m, self.Tp[p].sample_size())
+
+        return m * len(self.parties)
 
     def _party_recount(self, recount):
         if self.is_ballot_polling():
@@ -425,7 +421,6 @@ class DHondt(Audit):
             recount, m = self.recount()
             self.m += m
             accum_recount = self._update_accum_recount(accum_recount, recount)
-            party_recount = self._party_recount(recount)
 
             self.T, self.max_p_value = self.audit(recount, self.T)
             for p in self.Tp:

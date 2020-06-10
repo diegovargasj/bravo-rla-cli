@@ -61,7 +61,7 @@ if __name__ == '__main__':
         metavar='<seed>',
         dest='seed',
         default=os.urandom(64).hex(),
-        help='random seed, default 512 random bits'
+        help='random seed in hex, default 512 random bits'
     )
     parser.add_argument(
         '-f',
@@ -77,7 +77,7 @@ if __name__ == '__main__':
     max_polls = args.M
     social_choice_function = args.social_choice
     audit_type = args.audit_type
-    random_seed = args.seed.encode()
+    random_seed = args.seed
     preliminary_file = args.preliminary
 
     print(f'Reading csv file {preliminary_file}')
