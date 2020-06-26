@@ -1,1 +1,2 @@
 pandas
+git+https://github.com/clcert/ChaCha20-Generator-Utilities.git#subdirectory=python

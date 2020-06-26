@@ -83,6 +83,23 @@ def dhondt_sample_size(ballots, risk_limit, party_votes, Sw, Sl, gamma=0.95):
     )
 
 
+def comparison_sample_size(U, risk_limit, gamma=0.95):
+    """
+    Determines the approximate sample size for comparison audits
+    @param U            :   {float}
+                            Upper bound on the MICRO for the whole contest
+    @param risk_limit   :   {float}
+                            Maximum risk for the audit
+    @param gamma        :   {float}
+                            Security factor
+    @return             :   {int}
+                            Sample size in number of ballots
+    """
+    LR = gamma / (1 - 1 / U) + 1 - gamma
+    min_sample_size = math.log(1 / risk_limit) / math.log(LR)
+    return math.ceil(min_sample_size / gamma)
+
+
 def print_stats(count, W, L):
     """
     Prints candidate stats

@@ -18,13 +18,7 @@ This can be achieved with _compliance audits_.
 
 ## Dependencies
 
-Install the dependencies with `pip3 install -r requirements.txt`. You will also
-need the `ChaCha20` Pseudo Random Number Generator from [this github repo](https://github.com/clcert/ChaCha20-Generator-Utilities).
-To install it, run:
-
-    git clone https://github.com/clcert/ChaCha20-Generator-Utilities
-    cd ChaCha20-Generator-Utilities/python
-    python setup.py install
+Install the dependencies with `pip3 install -r requirements.txt`. 
 
 ## Usage
 

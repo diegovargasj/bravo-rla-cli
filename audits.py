@@ -89,9 +89,6 @@ class Audit:
         m = self.sample_size()
         m = min(m, len(self.scrambled))
         draw_size = m
-        if self.is_batch_comparison():
-            V = self.preliminary.groupby('table').sum()['votes'].mean()
-            draw_size = math.ceil(m / V)
 
         sample = self.scrambled[:draw_size]
         self.scrambled = self.scrambled[draw_size:]
@@ -230,13 +227,25 @@ class Plurality(Audit):
                     self.S[winner][loser] = self.vote_count[winner] / (self.vote_count[winner] + self.vote_count[loser])
 
     def sample_size(self):
-        adjusted_risk_limit = float(self.risk_limit) / self.max_p_value
-        m = utils.plurality_sample_size(
-            self.vote_count,
-            self.W,
-            self.L,
-            adjusted_risk_limit
-        )
+        if self.is_ballot_polling():
+            adjusted_risk_limit = float(self.risk_limit) / self.max_p_value
+            m = utils.plurality_sample_size(
+                self.vote_count,
+                self.W,
+                self.L,
+                adjusted_risk_limit
+            )
+
+        else:
+            transformed_vote_count = self._vote_count_transform(self.vote_count)
+            W = [w for w in self.Sw]
+            L = [l for l in self.Sl]
+            u = utils.MICRO_upper_bound(transformed_vote_count, W, L, self.Sw, self.Sl)
+            V = self.preliminary.groupby('table').sum()['votes'].max()
+            um = u * V
+            U = um * len(self.preliminary['table'].unique())
+            m = utils.comparison_sample_size(U, self.risk_limit)
+
         return m
 
     def run_audit(self):
